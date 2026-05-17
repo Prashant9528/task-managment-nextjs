@@ -1,0 +1,122 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER - People who use the app
+// ============================================
+model User {
+  id        String   @id @default(cuid())  // Unique ID (auto-generated)
+  email     String   @unique               // Email must be unique
+  password  String                         // Hashed password
+  name      String?                        // Optional display name
+  createdAt DateTime @default(now())       // When account was created
+  updatedAt DateTime @updatedAt            // Auto-updates on changes
+
+  // Relationships
+  boards              Board[]        // User can own many boards
+  tasks               Task[]         // User can be assigned to many tasks
+  memberships         BoardMember[]  // Boards this user is a member of
+  sentInvitations     Invitation[] @relation("InvitationSender")     // Invites I sent
+  receivedInvitations Invitation[] @relation("InvitationReceiver")   // Invites I received
+}
+
+// ============================================
+// BOARD - Kanban boards (like "My Project")
+// ============================================
+model Board {
+  id        String   @id @default(cuid())
+  title     String                         // Board name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  owner       User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId     String                         // Foreign key to User
+  columns     Column[]                       // Board has many columns
+  members     BoardMember[]                  // Users who have access to this board
+  invitations Invitation[]                   // Pending invitations
+}
+
+// ============================================
+// BOARD MEMBER - Shared access to boards
+// ============================================
+model BoardMember {
+  id        String   @id @default(cuid())
+  role      String   @default("editor")    // "viewer" or "editor"
+  createdAt DateTime @default(now())
+
+  // Relationships
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  // Ensure unique combination (user can only be member once per board)
+  @@unique([boardId, userId])
+}
+
+// ============================================
+// INVITATION - Pending board invitations
+// ============================================
+model Invitation {
+  id        String   @id @default(cuid())
+  role      String   @default("editor")    // "viewer" or "editor"
+  status    String   @default("pending")   // "pending", "accepted", "rejected"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  board      Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId    String
+  sender     User   @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId   String
+  receiver   User   @relation("InvitationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId String
+
+  // Can only have one pending invitation per user per board
+  @@unique([boardId, receiverId, status])
+}
+
+// ============================================
+// COLUMN - Columns in a board (To Do, Doing, Done)
+// ============================================
+model Column {
+  id        String   @id @default(cuid())
+  title     String                         // Column name
+  order     Int                            // Position (0, 1, 2...)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  boardId   String                         // Foreign key to Board
+  tasks     Task[]                         // Column has many tasks
+}
+
+// ============================================
+// TASK - Individual task cards
+// ============================================
+model Task {
+  id          String    @id @default(cuid())
+  title       String                       // Task title
+  description String?                      // Optional description
+  order       Int                          // Position within column
+  dueDate     DateTime?                    // Optional due date
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  column      Column    @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  columnId    String                       // Foreign key to Column
+  assignee    User?     @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId  String?                      // Optional - who's assigned
+}
